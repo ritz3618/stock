@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>日用品ストック</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2330; --sub: #6b7280; --line: #e5e7eb;
+    --accent: #2f6fde; --short: #fde8e8; --shortText: #b42318; --once: #7c3aed; --pending: #fff7d6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    font-size: 15px; -webkit-tap-highlight-color: transparent;
+  }
+  header { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line); }
+  .topbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; }
+  .who { flex: 1; font-size: 13px; color: var(--sub); }
+  .who b { color: var(--text); }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
+    border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+  button:disabled { opacity: .45; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.on { background: #e8f0fe; border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  nav { display: flex; padding: 0 8px; }
+  nav button { flex: 1; border: none; border-bottom: 3px solid transparent; border-radius: 0; padding: 10px 4px; color: var(--sub); }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  nav .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px;
+    background: var(--shortText); color: #fff; font-size: 11px; line-height: 18px; }
+  .banner { margin: 10px 12px 0; padding: 8px 12px; border-radius: 10px; background: #e8f0fe; color: #1d4ed8; font-size: 13px; }
+  main { padding: 4px 12px 140px; }
+  h2 { font-size: 13px; color: var(--sub); margin: 18px 4px 6px; font-weight: 600; }
+  .group { background: var(--card); border-radius: 14px; overflow: hidden; border: 1px solid var(--line); }
+  .item { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; border-top: 1px solid var(--line); }
+  .item:first-child { border-top: none; }
+  .item.short { background: var(--short); }
+  .item.changed { background: var(--pending); }
+  .icon { width: 30px; height: 30px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .icon img { width: 30px; height: 30px; object-fit: cover; border-radius: 6px; }
+  .body { flex: 1; min-width: 0; }
+  .name { font-weight: 600; word-break: break-all; }
+  .meta { font-size: 12px; color: var(--sub); margin-top: 2px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 6px; margin-left: 4px; vertical-align: 1px; }
+  .badge.once { background: #ede9fe; color: var(--once); }
+  .badge.short { background: var(--shortText); color: #fff; }
+  .ctrl { display: flex; align-items: center; gap: 4px; flex: none; }
+  .ctrl button { width: 40px; height: 40px; padding: 0; font-size: 20px; border-radius: 50%; }
+  .num { min-width: 46px; text-align: center; font-size: 18px; font-weight: 700; line-height: 1.1; }
+  .num small { display: block; font-size: 11px; font-weight: 600; color: #b45309; }
+  .num.empty { font-size: 12px; color: var(--sub); font-weight: 400; }
+  .ctrl button.buy { width: auto; height: auto; min-width: 104px; padding: 9px 12px; font-size: 13px; border-radius: 20px; }
+  .buy.done { background: var(--once); border-color: var(--once); color: #fff; }
+  .del { border: none; background: none; color: var(--sub); padding: 6px; font-size: 16px; }
+  details { margin-top: 22px; }
+  summary { color: var(--sub); font-size: 13px; padding: 6px 4px; }
+  .hidden-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--line); color: var(--sub); }
+  .hidden-item:first-child { border-top: none; }
+  .hidden-item .body { flex: 1; }
+  .empty-msg { text-align: center; color: var(--sub); padding: 40px 0; }
+  .savebar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; gap: 8px; align-items: center;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: var(--card); border-top: 1px solid var(--line); }
+  .savebar .info { flex: 1; font-size: 13px; color: var(--sub); }
+  .savebar .primary { padding: 12px 22px; }
+  .add { display: block; width: 100%; margin-top: 18px; padding: 12px; border-style: dashed; color: var(--accent); }
+  dialog { border: none; border-radius: 16px; padding: 18px; width: min(92vw, 420px); }
+  dialog::backdrop { background: rgba(0,0,0,.35); }
+  dialog h3 { margin: 0 0 12px; font-size: 17px; }
+  label { display: block; font-size: 13px; color: var(--sub); margin: 10px 0 4px; }
+  input, select { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  .row2 { display: flex; gap: 10px; }
+  .row2 > div { flex: 1; }
+  .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .toast { position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: #111827; color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 13px; z-index: 10;
+    max-width: 90vw; white-space: pre-line; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: .95; }
+  .loading { text-align: center; color: var(--sub); padding: 40px 0; }
+  body.logged-out nav, body.logged-out .savebar, body.logged-out #addBtn, body.logged-out #shopBtn,
+  body.logged-out #reloadBtn, body.logged-out #banner, body.logged-out .who { display: none !important; }
+  .switch { border: none; background: none; color: var(--accent); padding: 0 0 0 6px; font-size: 13px; }
+  .login { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-top: 16px; }
+  .login p { margin: 0 0 4px; font-size: 14px; line-height: 1.6; }
+  .users { display: flex; gap: 8px; }
+  .users button { flex: 1; padding: 12px; }
+  .login .error { color: var(--shortText); font-size: 13px; margin-top: 10px; min-height: 1em; }
+  .login .go { width: 100%; margin-top: 14px; padding: 12px; }
+</style>
+</head>
+<body class="logged-out">
+<header>
+  <div class="topbar">
+    <div class="who"><b id="who"></b>として更新中<button id="switchBtn" class="switch" type="button">切替</button></div>
+    <button id="shopBtn" type="button">🛒 買い物モード</button>
+    <button id="reloadBtn" type="button" aria-label="再読み込み">↻</button>
+  </div>
+  <nav id="tabs"></nav>
+</header>
+<div id="banner" class="banner" hidden></div>
+<main>
+  <div id="list"><div class="loading">読み込み中…</div></div>
+  <button id="addBtn" class="add" type="button">＋ 品目を追加</button>
+</main>
+
+<div class="savebar">
+  <div class="info" id="pendingInfo">変更はありません</div>
+  <button id="discardBtn" type="button">取消</button>
+  <button id="saveBtn" class="primary" type="button">保存</button>
+</div>
+
+<dialog id="addDialog">
+  <form id="addForm" method="dialog">
+    <h3>品目を追加(<span id="addSection"></span>)</h3>
+    <label for="fName">品目名</label>
+    <input id="fName" required maxlength="50">
+    <div class="row2">
+      <div>
+        <label for="fType">種別</label>
+        <select id="fType"><option>日用品</option><option>単発</option></select>
+      </div>
+      <div>
+        <label for="fCategory">カテゴリ</label>
+        <select id="fCategory"></select>
+      </div>
+    </div>
+    <div class="stock-only">
+      <div class="row2">
+        <div><label for="fUnit">単位</label><input id="fUnit" placeholder="本、パック など" maxlength="20"></div>
+        <div><label for="fCount">現在数(未開封)</label><input id="fCount" type="number" inputmode="numeric" min="-1" step="1"></div>
+      </div>
+      <label for="fLine">通知ライン</label>
+      <input id="fLine" type="number" inputmode="numeric" min="-1" step="1">
+    </div>
+    <label for="fIcon">アイコン(絵文字か画像のURL。空欄ならカテゴリの絵文字)</label>
+    <input id="fIcon" maxlength="300">
+    <div class="dialog-actions">
+      <button type="button" id="addCancel">やめる</button>
+      <button type="submit" class="primary" id="addSubmit">追加</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast"></div>
+
+<script>
+// ===== 設定 =====
+// GASのWebアプリのURL(デプロイで出る …/exec)。新しいデプロイを作ってURLが変わったら、ここも書き換える
+const API_URL = 'https://script.google.com/macros/s/AKfycbw9Q8ZYgZ3mAOiuPOLrWrh6I49okI0APTtWe8zYNr5c8F98YeAWnf9Eb-Jyqa3-OQP2/exec';
+
+// URLの ?user=…&key=…&mode=shop を読む(GitHub Pagesでは途中で落ちない)
+const PARAMS = new URLSearchParams(location.search);
+const BOOT = {
+  key: PARAMS.get('key') || '',
+  user: PARAMS.get('user') || '',
+  mode: PARAMS.get('mode') === 'shop' ? 'shop' : 'normal',
+  users: [], // 更新者の一覧はGASから受け取る(名前をこのファイルに書かないため)
+};
+const MIN_COUNT = -1;
+const STORE_KEY = 'stock-app-access';
+const BAD_KEY_MESSAGE = '合言葉が正しくありません';
+
+/** 今使っている合言葉と更新者 */
+const session = { key: '', user: '', userLabel: '' };
+
+const state = {
+  data: null,
+  tab: 'family',
+  shop: BOOT.mode === 'shop',
+  pending: {},     // "区分|品目ID" -> 増減
+  purchased: {},   // "区分|品目ID" -> true(単発の購入済み)
+  shopKeys: null,  // 買い物モードで表示する品目(読み込み時点で決め、操作中に消えないようにする)
+  busy: false,
+};
+
+const $ = (id) => document.getElementById(id);
+const pkey = (sec, id) => sec + '|' + id;
+
+// ===== アイコン表示(ここだけで扱う) =====
+/**
+ * 値がURLなら画像、それ以外は絵文字として表示する。空欄ならカテゴリの絵文字を使う。
+ * GoogleドライブのURLは、画像として表示できる形に置き換える(共有設定は「リンクを知っている全員」)。
+ */
+function renderIcon(icon, fallbackEmoji) {
+  const el = document.createElement('span');
+  el.className = 'icon';
+  const v = String(icon || '').trim();
+  const fallback = fallbackEmoji || '•';
+  if (/^https?:\/\//i.test(v)) {
+    const m = v.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:export=\w+&)?id=)([\w-]+)/);
+    const img = document.createElement('img');
+    img.src = m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w128' : v;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.onerror = () => { el.textContent = fallback; };
+    el.appendChild(img);
+  } else {
+    el.textContent = v || fallback;
+  }
+  return el;
+}
+
+// ===== サーバー呼び出し =====
+/**
+ * GASの doPost に、cookie を付けずに送る(credentials: 'omit')。
+ * Googleのログイン情報を送らないので、ブラウザのログインの状態(複数アカウントなど)に左右されない。
+ * Content-Type を text/plain にして、CORSの事前確認(preflight)が起きないようにしている。
+ */
+async function call(fn, ...args) {
+  let res;
+  try {
+    res = await fetch(API_URL, {
+      method: 'POST',
+      credentials: 'omit',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ fn: fn, args: args }),
+    });
+  } catch (e) {
+    throw new Error('通信できませんでした。電波の状態を確認して、やり直してください。');
+  }
+  let body;
+  try {
+    body = await res.json();
+  } catch (e) {
+    throw new Error('サーバーの応答を読めませんでした(' + res.status + ')。少し待ってからやり直してください。');
+  }
+  if (!body.ok) throw new Error(body.error);
+  return body.result;
+}
+
+function setBusy(b) {
+  state.busy = b;
+  ['saveBtn', 'discardBtn', 'reloadBtn', 'addBtn', 'addSubmit'].forEach((id) => { $(id).disabled = b; });
+  if (!b) updateSavebar();
+}
+
+function toast(msg, ms) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), ms || 2500);
+}
+
+function errorMessage(err) {
+  return (err && err.message ? err.message : String(err)).replace(/^Error: /, '');
+}
+
+function applyData(data, keepPending) {
+  state.data = data;
+  if (!keepPending) {
+    state.pending = {};
+    state.purchased = {};
+  } else {
+    // 消えた品目の未保存分は捨てる
+    const exists = {};
+    data.sectionList.forEach((s) => data.sections[s.key].forEach((it) => { exists[pkey(s.key, it.id)] = it; }));
+    Object.keys(state.pending).forEach((k) => { if (!exists[k]) delete state.pending[k]; });
+    Object.keys(state.purchased).forEach((k) => { if (!exists[k] || !exists[k].visible) delete state.purchased[k]; });
+  }
+  computeShopKeys();
+  render();
+}
+
+async function load() {
+  setBusy(true);
+  try {
+    applyData(await call('getData', session.key, session.user), false);
+  } catch (err) {
+    if (errorMessage(err).indexOf(BAD_KEY_MESSAGE) >= 0) {
+      clearSaved();
+      showLogin('合言葉が変わったようです。入力し直してください。', { user: session.user });
+      return;
+    }
+    $('list').innerHTML = '';
+    const p = document.createElement('div');
+    p.className = 'empty-msg';
+    p.textContent = '読み込めませんでした: ' + errorMessage(err);
+    $('list').appendChild(p);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function save() {
+  const n = pendingCount();
+  if (!n || state.busy) return;
+  const payload = {};
+  Object.keys(state.pending).forEach((k) => {
+    const [sec, id] = k.split('|');
+    (payload[sec] = payload[sec] || []).push({ id: id, delta: state.pending[k] });
+  });
+  Object.keys(state.purchased).forEach((k) => {
+    const [sec, id] = k.split('|');
+    (payload[sec] = payload[sec] || []).push({ id: id, purchased: true });
+  });
+  setBusy(true);
+  try {
+    const res = await call('saveChanges', session.key, session.user, payload);
+    applyData(res.data, false);
+    toast(['保存しました'].concat(res.notes || []).join('\n'), res.notes && res.notes.length ? 5000 : 2000);
+  } catch (err) {
+    toast('保存できませんでした: ' + errorMessage(err), 5000);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// ===== 判定 =====
+function categoryOf(name) {
+  return state.data.categories.find((c) => c.name === name) || null;
+}
+
+function projected(sec, item) {
+  const d = state.pending[pkey(sec, item.id)] || 0;
+  if (item.count === null && !d) return null;
+  return Math.max(MIN_COUNT, (item.count === null ? 0 : item.count) + d);
+}
+
+function isShortValue(item, value) {
+  return item.visible && item.type === '日用品' && value !== null && value <= item.line;
+}
+
+function computeShopKeys() {
+  state.shopKeys = {};
+  state.data.sectionList.forEach((s) => {
+    state.data.sections[s.key].forEach((it) => {
+      if (!it.visible) return;
+      if (it.type === '単発' || it.short) state.shopKeys[pkey(s.key, it.id)] = true;
+    });
+  });
+}
+
+function pendingCount() {
+  return Object.keys(state.pending).filter((k) => state.pending[k]).length + Object.keys(state.purchased).length;
+}
+
+// ===== 描画 =====
+function render() {
+  $('who').textContent = session.userLabel;
+  $('shopBtn').classList.toggle('on', state.shop);
+  $('addBtn').hidden = state.shop;
+  const banner = $('banner');
+  banner.hidden = !state.shop;
+  banner.textContent = '買い物モード:補充が必要な品目と、未購入の単発の品目だけを表示しています。';
+  renderTabs();
+  renderList();
+  updateSavebar();
+}
+
+function renderTabs() {
+  const nav = $('tabs');
+  nav.innerHTML = '';
+  state.data.sectionList.forEach((s) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = s.label;
+    if (s.key === state.tab) b.classList.add('active');
+    const n = state.data.sections[s.key].filter((it) => it.visible && (it.short || it.type === '単発')).length;
+    if (n) {
+      const c = document.createElement('span');
+      c.className = 'count';
+      c.textContent = n;
+      b.appendChild(c);
+    }
+    b.onclick = () => { state.tab = s.key; render(); window.scrollTo(0, 0); };
+    nav.appendChild(b);
+  });
+}
+
+function renderList() {
+  const main = $('list');
+  main.innerHTML = '';
+  const sec = state.tab;
+  const items = state.data.sections[sec];
+  const visible = items.filter((it) => it.visible && (!state.shop || state.shopKeys[pkey(sec, it.id)]));
+
+  // カテゴリの並び順でまとめる。カテゴリシートにないものは最後に「未分類」
+  const groups = state.data.categories.map((c) => ({ name: c.name, emoji: c.emoji, items: [] }));
+  const other = { name: '未分類', emoji: '', items: [] };
+  const byName = {};
+  groups.forEach((g) => { byName[g.name] = g; });
+  visible.forEach((it) => (byName[it.category] || other).items.push(it));
+  const shown = groups.concat([other]).filter((g) => g.items.length);
+
+  if (!shown.length) {
+    const p = document.createElement('div');
+    p.className = 'empty-msg';
+    p.textContent = state.shop ? '今は買い足すものはありません。' : '品目がありません。「＋ 品目を追加」から追加できます。';
+    main.appendChild(p);
+  }
+
+  shown.forEach((g) => {
+    const h = document.createElement('h2');
+    h.textContent = (g.emoji ? g.emoji + ' ' : '') + g.name;
+    main.appendChild(h);
+    const box = document.createElement('div');
+    box.className = 'group';
+    g.items.forEach((it) => box.appendChild(itemRow(sec, it, g.emoji)));
+    main.appendChild(box);
+  });
+
+  if (!state.shop) {
+    const hidden = items.filter((it) => !it.visible);
+    if (hidden.length) main.appendChild(hiddenList(sec, hidden));
+  }
+}
+
+function itemRow(sec, it, catEmoji) {
+  const k = pkey(sec, it.id);
+  const row = document.createElement('div');
+  row.className = 'item';
+  row.appendChild(renderIcon(it.icon, catEmoji));
+
+  const body = document.createElement('div');
+  body.className = 'body';
+  const name = document.createElement('div');
+  name.className = 'name';
+  name.textContent = it.name;
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  body.appendChild(name);
+  body.appendChild(meta);
+  row.appendChild(body);
+
+  const ctrl = document.createElement('div');
+  ctrl.className = 'ctrl';
+
+  if (it.type === '単発') {
+    addBadge(name, 'once', '単発');
+    meta.textContent = '一度だけ買うもの';
+    const done = !!state.purchased[k];
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'buy' + (done ? ' done' : '');
+    b.textContent = done ? '購入済み ✓' : '購入済みにする';
+    b.onclick = () => {
+      if (done) delete state.purchased[k]; else state.purchased[k] = true;
+      render();
+    };
+    ctrl.appendChild(b);
+    if (done) row.classList.add('changed');
+  } else {
+    const d = state.pending[k] || 0;
+    const value = projected(sec, it);
+    if (isShortValue(it, value)) {
+      row.classList.add('short');
+      addBadge(name, 'short', '要補充');
+    }
+    if (d) row.classList.add('changed');
+    const unit = it.unit ? it.unit : '';
+    const parts = [];
+    if (value === MIN_COUNT) parts.push('使っているものもなし');
+    else if (value !== null) parts.push('ストック' + value + unit);
+    parts.push('通知ライン' + it.line);
+    meta.textContent = parts.join(' ・ ');
+
+    const minus = document.createElement('button');
+    minus.type = 'button';
+    minus.textContent = '−';
+    minus.setAttribute('aria-label', it.name + 'を1つ減らす');
+    minus.disabled = value !== null && value <= MIN_COUNT;
+    minus.onclick = () => changeDelta(sec, it, -1);
+
+    const num = document.createElement('div');
+    num.className = 'num';
+    if (value === null) {
+      num.classList.add('empty');
+      num.textContent = '未入力';
+    } else {
+      num.textContent = value;
+      if (d) {
+        const s = document.createElement('small');
+        s.textContent = (d > 0 ? '+' : '') + d;
+        num.appendChild(s);
+      }
+    }
+
+    const plus = document.createElement('button');
+    plus.type = 'button';
+    plus.textContent = '+';
+    plus.setAttribute('aria-label', it.name + 'を1つ増やす');
+    plus.onclick = () => changeDelta(sec, it, +1);
+
+    ctrl.appendChild(minus);
+    ctrl.appendChild(num);
+    ctrl.appendChild(plus);
+  }
+  row.appendChild(ctrl);
+
+  if (!state.shop) {
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'del';
+    del.textContent = '🗑';
+    del.setAttribute('aria-label', it.name + 'を削除');
+    del.onclick = () => hideItem(sec, it);
+    row.appendChild(del);
+  }
+  return row;
+}
+
+function addBadge(parent, cls, text) {
+  const b = document.createElement('span');
+  b.className = 'badge ' + cls;
+  b.textContent = text;
+  parent.appendChild(b);
+}
+
+function hiddenList(sec, hidden) {
+  const det = document.createElement('details');
+  const sum = document.createElement('summary');
+  sum.textContent = '非表示の品目(' + hidden.length + ')';
+  det.appendChild(sum);
+  const box = document.createElement('div');
+  box.className = 'group';
+  hidden.forEach((it) => {
+    const row = document.createElement('div');
+    row.className = 'hidden-item';
+    const cat = categoryOf(it.category);
+    row.appendChild(renderIcon(it.icon, cat ? cat.emoji : ''));
+    const body = document.createElement('div');
+    body.className = 'body';
+    body.textContent = it.name + (it.type === '単発' ? '(単発)' : '');
+    row.appendChild(body);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = '戻す';
+    b.onclick = () => setVisibleAsync(sec, it, true);
+    row.appendChild(b);
+    box.appendChild(row);
+  });
+  det.appendChild(box);
+  return det;
+}
+
+function updateSavebar() {
+  const n = pendingCount();
+  $('pendingInfo').textContent = n ? n + '件の変更(まだ保存していません)' : '変更はありません';
+  $('saveBtn').disabled = state.busy || !n;
+  $('discardBtn').disabled = state.busy || !n;
+}
+
+// ===== 操作 =====
+function changeDelta(sec, it, step) {
+  const k = pkey(sec, it.id);
+  const base = it.count === null ? 0 : it.count;
+  const next = (state.pending[k] || 0) + step;
+  if (base + next < MIN_COUNT) return;
+  if (next) state.pending[k] = next; else delete state.pending[k];
+  render();
+}
+
+async function hideItem(sec, it) {
+  if (!confirm('「' + it.name + '」を削除しますか？\n(行は残して非表示にします。下の「非表示の品目」から戻せます)')) return;
+  await setVisibleAsync(sec, it, false);
+}
+
+async function setVisibleAsync(sec, it, visible) {
+  if (state.busy) return;
+  setBusy(true);
+  try {
+    applyData(await call('setVisible', session.key, session.user, sec, it.id, visible), true);
+    toast(visible ? '戻しました' : '非表示にしました');
+  } catch (err) {
+    toast('できませんでした: ' + errorMessage(err), 5000);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function openAdd() {
+  const label = state.data.sectionList.find((s) => s.key === state.tab).label;
+  $('addSection').textContent = label;
+  $('addForm').reset();
+  const sel = $('fCategory');
+  sel.innerHTML = '';
+  state.data.categories.forEach((c) => {
+    const o = document.createElement('option');
+    o.value = c.name;
+    o.textContent = (c.emoji ? c.emoji + ' ' : '') + c.name;
+    sel.appendChild(o);
+  });
+  updateAddForm();
+  $('addDialog').showModal();
+}
+
+function updateAddForm() {
+  const once = $('fType').value === '単発';
+  document.querySelector('.stock-only').hidden = once;
+  const c = categoryOf($('fCategory').value);
+  const def = c && c.defaultLine !== null ? c.defaultLine : 0;
+  $('fLine').placeholder = '空欄ならカテゴリの初期値(' + def + ')';
+}
+
+async function submitAdd(ev) {
+  ev.preventDefault();
+  if (state.busy) return;
+  const input = {
+    name: $('fName').value,
+    type: $('fType').value,
+    category: $('fCategory').value,
+    unit: $('fUnit').value,
+    count: $('fCount').value,
+    line: $('fLine').value,
+    icon: $('fIcon').value,
+  };
+  setBusy(true);
+  try {
+    applyData(await call('addItem', session.key, session.user, state.tab, input), true);
+    $('addDialog').close();
+    toast('「' + input.name.trim() + '」を追加しました');
+  } catch (err) {
+    toast('追加できませんでした: ' + errorMessage(err), 5000);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// ===== イベント =====
+$('saveBtn').onclick = save;
+$('discardBtn').onclick = () => {
+  if (!confirm('保存していない変更を取り消しますか？')) return;
+  state.pending = {};
+  state.purchased = {};
+  render();
+};
+$('reloadBtn').onclick = () => {
+  if (pendingCount() && !confirm('保存していない変更があります。破棄して読み込み直しますか？')) return;
+  load();
+};
+$('shopBtn').onclick = () => {
+  state.shop = !state.shop;
+  computeShopKeys();
+  render();
+  window.scrollTo(0, 0);
+};
+$('addBtn').onclick = openAdd;
+$('addCancel').onclick = () => $('addDialog').close();
+$('addForm').addEventListener('submit', submitAdd);
+$('fType').onchange = updateAddForm;
+$('fCategory').onchange = updateAddForm;
+window.addEventListener('beforeunload', (e) => {
+  if (pendingCount()) { e.preventDefault(); e.returnValue = ''; }
+});
+
+$('switchBtn').onclick = () => {
+  if (pendingCount() && !confirm('保存していない変更があります。破棄して切り替えますか？')) return;
+  clearSaved();
+  state.pending = {};
+  state.purchased = {};
+  showLogin('', {});
+};
+
+// ===== 合言葉と更新者 =====
+// URLの ?user=…&key=… があればそれを使う。なければこの端末に保存した合言葉を使い、
+// それもなければ入力してもらう。
+
+function readSaved() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY) || 'null') || {}; } catch (e) { return {}; }
+}
+function writeSaved(v) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(v)); } catch (e) { /* 保存できない環境では毎回入力 */ }
+}
+function clearSaved() {
+  try { localStorage.removeItem(STORE_KEY); } catch (e) { /* 何もしない */ }
+}
+
+function isKnownUser(id) {
+  return BOOT.users.some((u) => u.id === id);
+}
+
+function enter(key, user, userLabel) {
+  session.key = key;
+  session.user = user;
+  session.userLabel = userLabel;
+  writeSaved({ key: key, user: user });
+  document.body.classList.remove('logged-out');
+  $('who').textContent = userLabel;
+  load();
+}
+
+async function tryEnter(key, user) {
+  const res = await call('checkAccess', key, user);
+  enter(key, user, res.userLabel);
+}
+
+async function start() {
+  try {
+    BOOT.users = await call('getUsers');
+  } catch (err) {
+    showMessage('サーバーにつながりませんでした: ' + errorMessage(err));
+    return;
+  }
+  const saved = readSaved();
+  const key = BOOT.key || saved.key || '';
+  const user = [BOOT.user, saved.user].find(isKnownUser) || '';
+  if (key && user) {
+    try {
+      await tryEnter(key, user);
+      return;
+    } catch (err) {
+      clearSaved();
+      showLogin(errorMessage(err), { user: user });
+      return;
+    }
+  }
+  showLogin('', { key: key, user: user });
+}
+
+function showMessage(text) {
+  const p = document.createElement('div');
+  p.className = 'empty-msg';
+  p.textContent = text;
+  $('list').innerHTML = '';
+  $('list').appendChild(p);
+}
+
+function showLogin(message, pre) {
+  document.body.classList.add('logged-out');
+  session.key = '';
+  session.user = '';
+  session.userLabel = '';
+  let chosen = pre.user || '';
+
+  const box = document.createElement('div');
+  box.className = 'login';
+  const intro = document.createElement('p');
+  intro.textContent = '合言葉を入れて、だれとして更新するかを選んでください。この端末に保存されるので、次からは入力しなくても開けます。';
+  box.appendChild(intro);
+
+  const kl = document.createElement('label');
+  kl.textContent = '合言葉';
+  kl.htmlFor = 'loginKey';
+  const ki = document.createElement('input');
+  ki.id = 'loginKey';
+  ki.autocomplete = 'off';
+  ki.setAttribute('autocapitalize', 'off');
+  ki.spellcheck = false;
+  ki.value = pre.key || '';
+  box.appendChild(kl);
+  box.appendChild(ki);
+
+  const ul = document.createElement('label');
+  ul.textContent = 'だれとして更新しますか';
+  box.appendChild(ul);
+  const users = document.createElement('div');
+  users.className = 'users';
+  BOOT.users.forEach((u) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = u.label;
+    if (u.id === chosen) b.classList.add('on');
+    b.onclick = () => {
+      chosen = u.id;
+      users.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    };
+    users.appendChild(b);
+  });
+  box.appendChild(users);
+
+  const err = document.createElement('div');
+  err.className = 'error';
+  err.textContent = message || '';
+  box.appendChild(err);
+
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'primary go';
+  go.textContent = '開く';
+  go.onclick = async () => {
+    const key = ki.value.trim();
+    if (!key) { err.textContent = '合言葉を入れてください。'; return; }
+    if (!chosen) { err.textContent = 'だれとして更新するかを選んでください。'; return; }
+    go.disabled = true;
+    err.textContent = '';
+    try {
+      await tryEnter(key, chosen);
+    } catch (e) {
+      err.textContent = errorMessage(e);
+      go.disabled = false;
+    }
+  };
+  box.appendChild(go);
+
+  const list = $('list');
+  list.innerHTML = '';
+  list.appendChild(box);
+}
+
+start();
+</script>
+</body>
+</html>
