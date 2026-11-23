@@ -4,7 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
-<title>日用品ストック</title>
+<title>ストック管理</title>
+<meta name="apple-mobile-web-app-title" content="ストック管理">
+<meta name="theme-color" content="#2f6fde">
+<!-- ホーム画面のアイコン。リポジトリに置いた icon.jpg を使う -->
+<link rel="apple-touch-icon" href="icon.jpg">
+<link rel="icon" href="icon.jpg">
+<!-- GASへの通信の準備(接続)を先に始めて、最初の読み込みを少し速くする -->
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com">
 <style>
   :root {
     --bg: #f5f6f8; --card: #fff; --text: #1d2330; --sub: #6b7280; --line: #e5e7eb;
@@ -78,6 +86,20 @@
     max-width: 90vw; white-space: pre-line; opacity: 0; transition: opacity .2s; pointer-events: none; }
   .toast.show { opacity: .95; }
   .loading { text-align: center; color: var(--sub); padding: 40px 0; }
+  .note-toggle { border: none; background: none; padding: 2px 0 0; color: var(--accent); font-size: 12px; }
+  .note { font-size: 12px; color: var(--text); background: #f3f4f6; border-radius: 8px; padding: 6px 8px;
+    margin-top: 4px; white-space: pre-wrap; word-break: break-all; }
+  .item.saved { animation: savedFlash 2.2s ease-out; }
+  @keyframes savedFlash { 0%, 40% { background: #d1fadf; } 100% { background: inherit; } }
+  .saved-banner { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%) scale(.9); z-index: 20;
+    background: #16a34a; color: #fff; border-radius: 18px; padding: 22px 28px; text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+    min-width: 220px; max-width: 86vw; }
+  .saved-banner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .saved-banner .mark { font-size: 44px; line-height: 1; }
+  .saved-banner .title { font-size: 20px; font-weight: 700; margin-top: 8px; }
+  .saved-banner .sub { font-size: 13px; margin-top: 6px; white-space: pre-line; opacity: .95; }
+  .savebar .info.ok { color: #15803d; font-weight: 600; }
   body.logged-out nav, body.logged-out .savebar, body.logged-out #addBtn, body.logged-out #shopBtn,
   body.logged-out #reloadBtn, body.logged-out #banner, body.logged-out .who { display: none !important; }
   .switch { border: none; background: none; color: var(--accent); padding: 0 0 0 6px; font-size: 13px; }
@@ -133,6 +155,8 @@
       <label for="fLine">通知ライン</label>
       <input id="fLine" type="number" inputmode="numeric" min="-1" step="1">
     </div>
+    <label for="fNote">備考(保管場所など。任意)</label>
+    <input id="fNote" maxlength="200">
     <label for="fIcon">アイコン(絵文字か画像のURL。空欄ならカテゴリの絵文字)</label>
     <input id="fIcon" maxlength="300">
     <div class="dialog-actions">
@@ -143,6 +167,11 @@
 </dialog>
 
 <div id="toast" class="toast"></div>
+<div id="savedBanner" class="saved-banner" role="status" aria-live="polite">
+  <div class="mark">✓</div>
+  <div class="title">保存しました</div>
+  <div class="sub" id="savedSub"></div>
+</div>
 
 <script>
 // ===== 設定 =====
@@ -159,6 +188,7 @@ const BOOT = {
 };
 const MIN_COUNT = -1;
 const STORE_KEY = 'stock-app-access';
+const CACHE_KEY = 'stock-app-cache'; // 前回のデータ。開いた瞬間にまずこれを表示する
 const BAD_KEY_MESSAGE = '合言葉が正しくありません';
 
 /** 今使っている合言葉と更新者 */
@@ -171,6 +201,11 @@ const state = {
   pending: {},     // "区分|品目ID" -> 増減
   purchased: {},   // "区分|品目ID" -> true(単発の購入済み)
   shopKeys: null,  // 買い物モードで表示する品目(読み込み時点で決め、操作中に消えないようにする)
+  stale: false,    // 前回のデータを表示していて、最新を読み込み中
+  saving: false,   // 保存中
+  savedAt: null,   // 最後に保存した時刻(次の変更まで「保存しました」と出す)
+  savedKeys: {},   // 保存した品目(行を一瞬緑にする)
+  openNotes: {},   // 備考を開いている品目
   busy: false,
 };
 
@@ -233,7 +268,7 @@ async function call(fn, ...args) {
 function setBusy(b) {
   state.busy = b;
   ['saveBtn', 'discardBtn', 'reloadBtn', 'addBtn', 'addSubmit'].forEach((id) => { $(id).disabled = b; });
-  if (!b) updateSavebar();
+  updateSavebar();
 }
 
 function toast(msg, ms) {
@@ -248,7 +283,8 @@ function errorMessage(err) {
   return (err && err.message ? err.message : String(err)).replace(/^Error: /, '');
 }
 
-function applyData(data, keepPending) {
+/** @param {boolean=} fromCache 端末に保存した前回のデータを表示するとき true */
+function applyData(data, keepPending, fromCache) {
   state.data = data;
   if (!keepPending) {
     state.pending = {};
@@ -260,25 +296,35 @@ function applyData(data, keepPending) {
     Object.keys(state.pending).forEach((k) => { if (!exists[k]) delete state.pending[k]; });
     Object.keys(state.purchased).forEach((k) => { if (!exists[k] || !exists[k].visible) delete state.purchased[k]; });
   }
+  if (!fromCache) {
+    if (data.users) BOOT.users = data.users;
+    writeCache(session.user, data);
+  }
   computeShopKeys();
   render();
 }
 
+/** サーバーから最新のデータを読む(合言葉の確認も兼ねる) */
 async function load() {
   setBusy(true);
   try {
-    applyData(await call('getData', session.key, session.user), false);
+    const data = await call('getData', session.key, session.user);
+    session.userLabel = labelOf(data.users, session.user) || session.userLabel;
+    $('who').textContent = session.userLabel;
+    writeSaved({ key: session.key, user: session.user, userLabel: session.userLabel });
+    state.stale = false;
+    applyData(data, true); // 前回のデータを見ている間に押した＋−は残す
   } catch (err) {
-    if (errorMessage(err).indexOf(BAD_KEY_MESSAGE) >= 0) {
+    state.stale = false;
+    const msg = errorMessage(err);
+    if (msg.indexOf(BAD_KEY_MESSAGE) >= 0 || msg.indexOf('更新者が分かりません') >= 0) {
       clearSaved();
-      showLogin('合言葉が変わったようです。入力し直してください。', { user: session.user });
+      clearCache();
+      await showLoginWithUsers('合言葉が変わったようです。入力し直してください。', { user: session.user });
       return;
     }
-    $('list').innerHTML = '';
-    const p = document.createElement('div');
-    p.className = 'empty-msg';
-    p.textContent = '読み込めませんでした: ' + errorMessage(err);
-    $('list').appendChild(p);
+    if (state.data) toast('最新の内容を読み込めませんでした: ' + msg, 5000);
+    else showMessage('読み込めませんでした: ' + msg);
   } finally {
     setBusy(false);
   }
@@ -296,16 +342,32 @@ async function save() {
     const [sec, id] = k.split('|');
     (payload[sec] = payload[sec] || []).push({ id: id, purchased: true });
   });
+  const savedKeys = {};
+  Object.keys(state.pending).forEach((k) => { savedKeys[k] = true; });
+  state.saving = true;
   setBusy(true);
   try {
     const res = await call('saveChanges', session.key, session.user, payload);
+    state.savedKeys = savedKeys;
+    state.savedAt = new Date();
     applyData(res.data, false);
-    toast(['保存しました'].concat(res.notes || []).join('\n'), res.notes && res.notes.length ? 5000 : 2000);
+    showSaved(n, res.notes || []);
+    setTimeout(() => { state.savedKeys = {}; }, 2500);
   } catch (err) {
-    toast('保存できませんでした: ' + errorMessage(err), 5000);
+    toast('保存できませんでした: ' + errorMessage(err), 6000);
   } finally {
+    state.saving = false;
     setBusy(false);
   }
+}
+
+/** 保存できたことを画面の中央に大きく出す */
+function showSaved(count, notes) {
+  $('savedSub').textContent = [count + '件の変更を記録しました'].concat(notes).join('\n');
+  const b = $('savedBanner');
+  b.classList.add('show');
+  clearTimeout(showSaved._t);
+  showSaved._t = setTimeout(() => b.classList.remove('show'), notes.length ? 4000 : 1800);
 }
 
 // ===== 判定 =====
@@ -423,6 +485,8 @@ function itemRow(sec, it, catEmoji) {
   meta.className = 'meta';
   body.appendChild(name);
   body.appendChild(meta);
+  if (it.note) body.appendChild(noteBlock(k, it.note));
+  if (state.savedKeys[k]) row.classList.add('saved');
   row.appendChild(body);
 
   const ctrl = document.createElement('div');
@@ -502,6 +566,28 @@ function itemRow(sec, it, catEmoji) {
   return row;
 }
 
+/** 備考。最初はたたんでおき、押すと開く */
+function noteBlock(k, text) {
+  const wrap = document.createElement('div');
+  const open = !!state.openNotes[k];
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'note-toggle';
+  b.textContent = open ? '▾ 備考をとじる' : '▸ 備考';
+  b.onclick = () => {
+    if (open) delete state.openNotes[k]; else state.openNotes[k] = true;
+    render();
+  };
+  wrap.appendChild(b);
+  if (open) {
+    const n = document.createElement('div');
+    n.className = 'note';
+    n.textContent = text;
+    wrap.appendChild(n);
+  }
+  return wrap;
+}
+
 function addBadge(parent, cls, text) {
   const b = document.createElement('span');
   b.className = 'badge ' + cls;
@@ -538,7 +624,22 @@ function hiddenList(sec, hidden) {
 
 function updateSavebar() {
   const n = pendingCount();
-  $('pendingInfo').textContent = n ? n + '件の変更(まだ保存していません)' : '変更はありません';
+  const info = $('pendingInfo');
+  info.classList.remove('ok');
+  if (state.saving) {
+    info.textContent = '保存しています…';
+  } else if (state.stale) {
+    info.textContent = '最新の内容を読み込み中…';
+  } else if (n) {
+    info.textContent = n + '件の変更(まだ保存していません)';
+  } else if (state.savedAt) {
+    const t = state.savedAt;
+    info.textContent = '✓ ' + t.getHours() + ':' + String(t.getMinutes()).padStart(2, '0') + ' に保存しました';
+    info.classList.add('ok');
+  } else {
+    info.textContent = '変更はありません';
+  }
+  $('saveBtn').textContent = state.saving ? '保存中…' : '保存';
   $('saveBtn').disabled = state.busy || !n;
   $('discardBtn').disabled = state.busy || !n;
 }
@@ -606,6 +707,7 @@ async function submitAdd(ev) {
     count: $('fCount').value,
     line: $('fLine').value,
     icon: $('fIcon').value,
+    note: $('fNote').value,
   };
   setBusy(true);
   try {
@@ -629,6 +731,8 @@ $('discardBtn').onclick = () => {
 };
 $('reloadBtn').onclick = () => {
   if (pendingCount() && !confirm('保存していない変更があります。破棄して読み込み直しますか？')) return;
+  state.pending = {};
+  state.purchased = {};
   load();
 };
 $('shopBtn').onclick = () => {
@@ -649,9 +753,10 @@ window.addEventListener('beforeunload', (e) => {
 $('switchBtn').onclick = () => {
   if (pendingCount() && !confirm('保存していない変更があります。破棄して切り替えますか？')) return;
   clearSaved();
+  clearCache();
   state.pending = {};
   state.purchased = {};
-  showLogin('', {});
+  showLoginWithUsers('', {});
 };
 
 // ===== 合言葉と更新者 =====
@@ -667,47 +772,61 @@ function writeSaved(v) {
 function clearSaved() {
   try { localStorage.removeItem(STORE_KEY); } catch (e) { /* 何もしない */ }
 }
-
-function isKnownUser(id) {
-  return BOOT.users.some((u) => u.id === id);
+function readCache() {
+  try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { return null; }
+}
+function writeCache(user, data) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ user: user, data: data })); } catch (e) { /* 何もしない */ }
+}
+function clearCache() {
+  try { localStorage.removeItem(CACHE_KEY); } catch (e) { /* 何もしない */ }
 }
 
-function enter(key, user, userLabel) {
+function labelOf(users, id) {
+  const u = (users || []).find((x) => x.id === id);
+  return u ? u.label : '';
+}
+
+/** 合言葉と更新者が分かっているとき。前回のデータをすぐ表示し、最新を裏で読み込む */
+async function enter(key, user, labelHint) {
   session.key = key;
   session.user = user;
-  session.userLabel = userLabel;
-  writeSaved({ key: key, user: user });
+  session.userLabel = labelHint || '';
   document.body.classList.remove('logged-out');
-  $('who').textContent = userLabel;
-  load();
-}
-
-async function tryEnter(key, user) {
-  const res = await call('checkAccess', key, user);
-  enter(key, user, res.userLabel);
+  $('who').textContent = session.userLabel;
+  const cached = readCache();
+  if (cached && cached.user === user && cached.data) {
+    if (!session.userLabel) session.userLabel = labelOf(cached.data.users, user);
+    $('who').textContent = session.userLabel;
+    state.stale = true;
+    applyData(cached.data, false, true);
+  }
+  await load();
 }
 
 async function start() {
-  try {
-    BOOT.users = await call('getUsers');
-  } catch (err) {
-    showMessage('サーバーにつながりませんでした: ' + errorMessage(err));
-    return;
-  }
   const saved = readSaved();
   const key = BOOT.key || saved.key || '';
-  const user = [BOOT.user, saved.user].find(isKnownUser) || '';
+  const user = BOOT.user || saved.user || '';
   if (key && user) {
+    await enter(key, user, user === saved.user ? saved.userLabel : '');
+    return;
+  }
+  await showLoginWithUsers('', { key: key, user: user });
+}
+
+/** 入力画面を出す。更新者の一覧がまだなければGASから受け取る */
+async function showLoginWithUsers(message, pre) {
+  if (!BOOT.users.length) {
+    showMessage('読み込み中…');
     try {
-      await tryEnter(key, user);
-      return;
+      BOOT.users = await call('getUsers');
     } catch (err) {
-      clearSaved();
-      showLogin(errorMessage(err), { user: user });
+      showMessage('サーバーにつながりませんでした: ' + errorMessage(err));
       return;
     }
   }
-  showLogin('', { key: key, user: user });
+  showLogin(message, pre);
 }
 
 function showMessage(text) {
@@ -777,7 +896,16 @@ function showLogin(message, pre) {
     go.disabled = true;
     err.textContent = '';
     try {
-      await tryEnter(key, chosen);
+      // データの取得で合言葉も確かめる(問い合わせ1回で済ませる)
+      const data = await call('getData', key, chosen);
+      session.key = key;
+      session.user = chosen;
+      session.userLabel = labelOf(data.users, chosen);
+      writeSaved({ key: key, user: chosen, userLabel: session.userLabel });
+      document.body.classList.remove('logged-out');
+      $('who').textContent = session.userLabel;
+      state.stale = false;
+      applyData(data, false);
     } catch (e) {
       err.textContent = errorMessage(e);
       go.disabled = false;
