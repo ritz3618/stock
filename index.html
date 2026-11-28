@@ -56,8 +56,12 @@
   .badge.short { background: var(--shortText); color: #fff; }
   .ctrl { display: flex; align-items: center; gap: 4px; flex: none; }
   .ctrl button { width: 40px; height: 40px; padding: 0; font-size: 20px; border-radius: 50%; }
-  .num { min-width: 46px; text-align: center; font-size: 18px; font-weight: 700; line-height: 1.1; }
-  .num small { display: block; font-size: 11px; font-weight: 600; color: #b45309; }
+  .ctrl button.step { width: 36px; height: 36px; font-size: 18px; }
+  .num { width: 50px; text-align: center; font-size: 20px; font-weight: 700; line-height: 1.1; }
+  .num .unit { display: block; font-size: 11px; font-weight: 500; color: var(--sub); margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .num .delta { color: #b45309; font-weight: 700; }
+  .legend { font-size: 12px; color: var(--sub); margin: 12px 4px 0; line-height: 1.5; }
   .num.empty { font-size: 12px; color: var(--sub); font-weight: 400; }
   .ctrl button.buy { width: auto; height: auto; min-width: 104px; padding: 9px 12px; font-size: 13px; border-radius: 20px; }
   .buy.done { background: var(--once); border-color: var(--once); color: #fff; }
@@ -452,6 +456,13 @@ function renderList() {
   visible.forEach((it) => (byName[it.category] || other).items.push(it));
   const shown = groups.concat([other]).filter((g) => g.items.length);
 
+  if (shown.length && items.some((it) => it.type === '日用品')) {
+    const legend = document.createElement('div');
+    legend.className = 'legend';
+    legend.textContent = '数字は未開封のストック数(−1は使い切り)。🔔 の数以下になると通知します';
+    main.appendChild(legend);
+  }
+
   if (!shown.length) {
     const p = document.createElement('div');
     p.className = 'empty-msg';
@@ -520,16 +531,13 @@ function itemRow(sec, it, catEmoji) {
       addBadge(name, 'short', '要補充');
     }
     if (d) row.classList.add('changed');
-    const unit = it.unit ? it.unit : '';
-    const parts = [];
-    if (value === MIN_COUNT) parts.push('使っているものもなし');
-    else if (value !== null) parts.push('ストック' + value + unit);
-    parts.push('通知ライン' + it.line);
-    meta.textContent = parts.join(' ・ ');
+    meta.textContent = ruleText(it);
+    meta.title = '通知ライン ' + it.line + (it.lineIsDefault ? '(カテゴリの初期値)' : '');
 
     const minus = document.createElement('button');
     minus.type = 'button';
     minus.textContent = '−';
+    minus.className = 'step';
     minus.setAttribute('aria-label', it.name + 'を1つ減らす');
     minus.disabled = value !== null && value <= MIN_COUNT;
     minus.onclick = () => changeDelta(sec, it, -1);
@@ -540,17 +548,24 @@ function itemRow(sec, it, catEmoji) {
       num.classList.add('empty');
       num.textContent = '未入力';
     } else {
-      num.textContent = value;
+      // −1 は「使っているものもない」状態なので、数字ではなく「なし」と出す
+      num.appendChild(document.createTextNode(String(value).replace('-', '−')));
+      const u = document.createElement('span');
+      u.className = 'unit';
+      u.textContent = value <= MIN_COUNT ? '使い切り' : shortUnit(it.unit);
       if (d) {
-        const s = document.createElement('small');
-        s.textContent = (d > 0 ? '+' : '') + d;
-        num.appendChild(s);
+        const dl = document.createElement('span');
+        dl.className = 'delta';
+        dl.textContent = ' ' + (d > 0 ? '+' : '') + d;
+        u.appendChild(dl);
       }
+      num.appendChild(u);
     }
 
     const plus = document.createElement('button');
     plus.type = 'button';
     plus.textContent = '+';
+    plus.className = 'step';
     plus.setAttribute('aria-label', it.name + 'を1つ増やす');
     plus.onclick = () => changeDelta(sec, it, +1);
 
@@ -641,6 +656,16 @@ function relativeTime(t) {
   if (days === 0) return min < 60 ? min + '分前' : Math.floor(min / 60) + '時間前';
   if (days === 1) return '昨日';
   return days + '日前';
+}
+
+/** 数字の下に出す単位。「袋(詰め替え)」のような括弧書きは省いて短くする */
+function shortUnit(unit) {
+  return String(unit || '').replace(/[（(].*$/, '').trim() || '個';
+}
+
+/** 通知ライン。「🔔 0」の形で数字だけを出す(意味は一覧の上の説明に一度だけ書く) */
+function ruleText(it) {
+  return '🔔 ' + String(it.line).replace('-', '−');
 }
 
 function addBadge(parent, cls, text) {
