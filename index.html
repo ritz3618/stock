@@ -87,8 +87,11 @@
   .toast.show { opacity: .95; }
   .loading { text-align: center; color: var(--sub); padding: 40px 0; }
   .note-toggle { border: none; background: none; padding: 2px 0 0; color: var(--accent); font-size: 12px; }
-  .note { font-size: 12px; color: var(--text); background: #f3f4f6; border-radius: 8px; padding: 6px 8px;
+  .note { font-size: 12px; line-height: 1.5; color: var(--text); background: #f3f4f6; border-radius: 8px; padding: 5px 8px;
     margin-top: 4px; white-space: pre-wrap; word-break: break-all; }
+  .note-text.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  .updated { font-size: 11px; color: var(--sub); margin-top: 2px; }
+  .updated.stale { color: #b45309; font-weight: 600; }
   .item.saved { animation: savedFlash 2.2s ease-out; }
   @keyframes savedFlash { 0%, 40% { background: #d1fadf; } 100% { background: inherit; } }
   .saved-banner { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%) scale(.9); z-index: 20;
@@ -189,6 +192,7 @@ const BOOT = {
 const MIN_COUNT = -1;
 const STORE_KEY = 'stock-app-access';
 const CACHE_KEY = 'stock-app-cache'; // 前回のデータ。開いた瞬間にまずこれを表示する
+const STALE_DAYS = 30; // 最終更新からこの日数がたった日用品を目立たせる(棚卸しの目安)
 const BAD_KEY_MESSAGE = '合言葉が正しくありません';
 
 /** 今使っている合言葉と更新者 */
@@ -410,6 +414,7 @@ function render() {
   renderTabs();
   renderList();
   updateSavebar();
+  fitNotes();
 }
 
 function renderTabs() {
@@ -485,6 +490,7 @@ function itemRow(sec, it, catEmoji) {
   meta.className = 'meta';
   body.appendChild(name);
   body.appendChild(meta);
+  if (it.type !== '単発') body.appendChild(updatedLine(it));
   if (it.note) body.appendChild(noteBlock(k, it.note));
   if (state.savedKeys[k]) row.classList.add('saved');
   row.appendChild(body);
@@ -566,26 +572,75 @@ function itemRow(sec, it, catEmoji) {
   return row;
 }
 
-/** 備考。最初はたたんでおき、押すと開く */
+/**
+ * 備考。2行まで表示し、それより長いときだけ「もっと見る」で全部を開く。
+ * 長いかどうかは表示してみないと分からないので、描画のあと fitNotes() で判定する。
+ */
 function noteBlock(k, text) {
   const wrap = document.createElement('div');
   const open = !!state.openNotes[k];
+  const n = document.createElement('div');
+  n.className = 'note';
+  const t = document.createElement('div'); // 余白の外側で2行に切るため、文字は内側の要素に入れる
+  t.className = 'note-text' + (open ? '' : ' clamp');
+  t.textContent = text;
+  n.appendChild(t);
+  wrap.appendChild(n);
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'note-toggle';
-  b.textContent = open ? '▾ 備考をとじる' : '▸ 備考';
+  b.textContent = open ? '▴ とじる' : '▾ もっと見る';
+  b.hidden = !open; // 開いていないときは、2行に収まらない場合だけ fitNotes() で出す
   b.onclick = () => {
     if (open) delete state.openNotes[k]; else state.openNotes[k] = true;
     render();
   };
   wrap.appendChild(b);
-  if (open) {
-    const n = document.createElement('div');
-    n.className = 'note';
-    n.textContent = text;
-    wrap.appendChild(n);
-  }
   return wrap;
+}
+
+/** 2行に収まらない備考にだけ「もっと見る」を出す */
+function fitNotes() {
+  document.querySelectorAll('.note-text.clamp').forEach((t) => {
+    const b = t.parentElement.nextElementSibling;
+    if (b) b.hidden = t.scrollHeight <= t.clientHeight + 1;
+  });
+}
+
+/** 最終更新を「3日前・リョウカ」の形で出す。STALE_DAYS 以上たっていれば目立たせる */
+function updatedLine(it) {
+  const el = document.createElement('div');
+  el.className = 'updated';
+  const t = it.updated ? new Date(it.updated) : null;
+  const days = t ? ageDays(t) : null;
+  const who = it.updater ? '・' + it.updater : '';
+  if (!t) {
+    el.textContent = '記録なし';
+    el.classList.add('stale');
+  } else if (days >= STALE_DAYS) {
+    el.textContent = '⚠ ' + relativeTime(t) + who + '(' + STALE_DAYS + '日以上記録なし)';
+    el.classList.add('stale');
+  } else {
+    el.textContent = relativeTime(t) + who;
+  }
+  return el;
+}
+
+/** 日付の差(暦の日数)。昨日の23時でも今日から見れば1日前 */
+function ageDays(t) {
+  const a = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  const n = new Date();
+  const b = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  return Math.round((b - a) / 86400000);
+}
+
+function relativeTime(t) {
+  const min = Math.floor((Date.now() - t.getTime()) / 60000);
+  const days = ageDays(t);
+  if (min < 1) return 'たった今';
+  if (days === 0) return min < 60 ? min + '分前' : Math.floor(min / 60) + '時間前';
+  if (days === 1) return '昨日';
+  return days + '日前';
 }
 
 function addBadge(parent, cls, text) {
