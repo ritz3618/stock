@@ -25,8 +25,9 @@
     font-size: 15px; -webkit-tap-highlight-color: transparent;
   }
   header { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line); }
-  .topbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; }
-  .who { flex: 1; font-size: 13px; color: var(--sub); }
+  .topbar { display: flex; align-items: center; gap: 6px; padding: 6px 12px 2px; }
+  .topbar button { padding: 5px 10px; font-size: 13px; border-radius: 8px; }
+  .who { flex: 1; font-size: 12px; color: var(--sub); white-space: nowrap; }
   .who b { color: var(--text); }
   button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
     border-radius: 10px; padding: 8px 12px; cursor: pointer; }
@@ -34,8 +35,15 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   button.on { background: #e8f0fe; border-color: var(--accent); color: var(--accent); font-weight: 600; }
   nav { display: flex; padding: 0 8px; }
-  nav button { flex: 1; border: none; border-bottom: 3px solid transparent; border-radius: 0; padding: 10px 4px; color: var(--sub); }
+  nav button { flex: 1; border: none; border-bottom: 3px solid transparent; border-radius: 0; padding: 6px 4px; font-size: 14px; color: var(--sub); }
   nav button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .shops { display: flex; justify-content: space-between; padding: 4px 10px 6px; }
+  .shops a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; text-decoration: none;
+    color: var(--text); font-size: 10px; line-height: 1.2; white-space: nowrap; min-width: 0; }
+  .shops .logo { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: #fff;
+    display: flex; align-items: center; justify-content: center; overflow: hidden; font-weight: 700; font-size: 15px; }
+  .shops .logo img { width: 28px; height: 28px; object-fit: contain; }
+  .shops a:active .logo { transform: scale(.92); }
   nav .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px;
     background: var(--shortText); color: #fff; font-size: 11px; line-height: 18px; }
   .banner { margin: 10px 12px 0; padding: 8px 12px; border-radius: 10px; background: #e8f0fe; color: #1d4ed8; font-size: 13px; }
@@ -121,10 +129,11 @@
 <body class="logged-out">
 <header>
   <div class="topbar">
-    <div class="who"><b id="who"></b>として更新中<button id="switchBtn" class="switch" type="button">切替</button></div>
-    <button id="shopBtn" type="button">🛒 買い物モード</button>
+    <div class="who"><b id="who"></b>で更新中<button id="switchBtn" class="switch" type="button">切替</button></div>
+    <button id="shopBtn" type="button">🛒 買い物</button>
     <button id="reloadBtn" type="button" aria-label="再読み込み">↻</button>
   </div>
+  <div class="shops" id="shops"></div>
   <nav id="tabs"></nav>
 </header>
 <div id="banner" class="banner" hidden></div>
@@ -184,6 +193,19 @@
 // ===== 設定 =====
 // GASのWebアプリのURL(デプロイで出る …/exec)。新しいデプロイを作ってURLが変わったら、ここも書き換える
 const API_URL = 'https://script.google.com/macros/s/AKfycbw9Q8ZYgZ3mAOiuPOLrWrh6I49okI0APTtWe8zYNr5c8F98YeAWnf9Eb-Jyqa3-OQP2/exec';
+
+/**
+ * 画面上部に並べるECサイト。上から順に左から並ぶ。増やす・減らす・順番を変えるときはここを直す。
+ * url はサイトのトップページ。アプリが入っていて、そのURLにアプリが対応していればアプリが開き、
+ * そうでなければブラウザで開く。domain はアイコン(サイトのファビコン)を取るのに使う。
+ */
+const SHOPS = [
+  { name: 'Amazon', url: 'https://www.amazon.co.jp/', domain: 'amazon.co.jp' },
+  { name: '楽天市場', url: 'https://www.rakuten.co.jp/', domain: 'rakuten.co.jp' },
+  { name: 'Yahoo!', url: 'https://shopping.yahoo.co.jp/', domain: 'shopping.yahoo.co.jp' },
+  { name: 'dショッピング', url: 'https://dshopping.docomo.ne.jp/', domain: 'dshopping.docomo.ne.jp' },
+  { name: 'Green Beans', url: 'https://greenbeans.com/', domain: 'greenbeans.com' },
+];
 
 // URLの ?user=…&key=…&mode=shop を読む(GitHub Pagesでは途中で落ちない)
 const PARAMS = new URLSearchParams(location.search);
@@ -998,6 +1020,30 @@ function showLogin(message, pre) {
   list.appendChild(box);
 }
 
+function renderShops() {
+  const box = $('shops');
+  box.innerHTML = '';
+  SHOPS.forEach((sh) => {
+    const a = document.createElement('a');
+    a.href = sh.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    const logo = document.createElement('span');
+    logo.className = 'logo';
+    const img = document.createElement('img');
+    img.alt = '';
+    img.src = 'https://www.google.com/s2/favicons?domain=' + encodeURIComponent(sh.domain) + '&sz=64';
+    img.onerror = () => { logo.textContent = sh.name.charAt(0); }; // 取れなければ頭文字
+    logo.appendChild(img);
+    const label = document.createElement('span');
+    label.textContent = sh.name;
+    a.appendChild(logo);
+    a.appendChild(label);
+    box.appendChild(a);
+  });
+}
+
+renderShops();
 start();
 </script>
 </body>
